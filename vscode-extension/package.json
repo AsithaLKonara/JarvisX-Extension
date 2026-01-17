@@ -1,0 +1,46 @@
+{
+  "name": "local-cursor-dev-os",
+  "displayName": "Local Cursor AI",
+  "description": "A personal, local AI development system.",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "localCursor.openChat",
+        "title": "Local Cursor: Open Chat"
+      },
+      {
+        "command": "localCursor.inlineEdit",
+        "title": "Local Cursor: Inline Edit"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "16.x",
+    "@types/node-fetch": "^2.6.4",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.44.0",
+    "typescript": "^5.1.3"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.9"
+  }
+}
