@@ -11,15 +11,20 @@ export function openChatPanel() {
   panel.webview.html = `
     <html>
       <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; margin: 0; padding: 10px; box-sizing: border-box; }
-        #output { flex-grow: 1; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 4px; margin-bottom: 10px; white-space: pre-wrap; }
-        textarea { width: 100%; height: 80px; background: #333; color: white; border: 1px solid #555; padding: 5px; }
-        button { background: #007acc; color: white; border: none; padding: 10px; cursor: pointer; margin-top: 5px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; height: 100vh; margin: 0; padding: 10px; box-sizing: border-box; background: #1e1e1e; color: #d4d4d4; }
+        #output { flex-grow: 1; overflow-y: auto; padding: 10px; border-radius: 4px; margin-bottom: 10px; }
+        .thought { color: #6a9955; font-style: italic; margin-bottom: 10px; border-left: 2px solid #6a9955; padding-left: 10px; }
+        .plan { color: #4fc1ff; margin-bottom: 10px; }
+        .action { background: #333; padding: 8px; border-radius: 4px; margin-bottom: 5px; font-family: monospace; }
+        textarea { width: 100%; height: 80px; background: #252526; color: white; border: 1px solid #454545; padding: 8px; border-radius: 4px; outline: none; }
+        button { background: #007acc; color: white; border: none; padding: 10px 15px; cursor: pointer; border-radius: 4px; margin-top: 10px; align-self: flex-end; }
+        button:hover { background: #0062a3; }
       </style>
       <body>
         <div id="output"></div>
-        <textarea id="prompt" placeholder="Ask local AI..."></textarea>
-        <button onclick="send()">Send (Streaming)</button>
+        <textarea id="prompt" placeholder="Message JarvisX..."></textarea>
+        <button onclick="send()">Send</button>
+
         <script>
           const vscode = acquireVsCodeApi();
           const output = document.getElementById('output');
@@ -28,7 +33,13 @@ export function openChatPanel() {
           async function send() {
             const text = prompt.value;
             prompt.value = '';
-            output.innerText += "\\nUser: " + text + "\\nAI: ";
+            
+            const userMsg = document.createElement('div');
+            userMsg.innerHTML = "<strong>User:</strong> " + text;
+            output.appendChild(userMsg);
+
+            const aiResponse = document.createElement('div');
+            output.appendChild(aiResponse);
             
             const response = await fetch("http://localhost:3333/chat", {
               method: "POST",
@@ -41,6 +52,7 @@ export function openChatPanel() {
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            let fullText = "";
 
             while (true) {
               const { done, value } = await reader.read();
@@ -49,7 +61,23 @@ export function openChatPanel() {
               const lines = chunk.split('\\n\\n');
               for (const line of lines) {
                 if (line.startsWith('data: ')) {
-                  output.innerText += line.replace('data: ', '');
+                  const data = line.replace('data: ', '');
+                  fullText += data;
+                  
+                  // Simple live rendering of structured data if it's JSON
+                  try {
+                    const parsed = JSON.parse(fullText);
+                    aiResponse.innerHTML = "";
+                    if (parsed.thought) aiResponse.innerHTML += \`<div class="thought">\${parsed.thought}</div>\`;
+                    if (parsed.plan) aiResponse.innerHTML += \`<div class="plan">Plan: \${parsed.plan.join(' → ')}</div>\`;
+                    if (parsed.actions) {
+                      parsed.actions.forEach(a => {
+                        aiResponse.innerHTML += \`<div class="action">\${a.type}: \${a.path || ''}</div>\`;
+                      });
+                    }
+                  } catch (e) {
+                    aiResponse.innerText = fullText;
+                  }
                   output.scrollTop = output.scrollHeight;
                 }
               }

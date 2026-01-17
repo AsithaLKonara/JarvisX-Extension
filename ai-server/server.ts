@@ -1,8 +1,18 @@
 import express from "express";
 import fetch from "node-fetch";
+import { validateAgentResponse } from "./schema";
+import path from "path";
 
 const app = express();
 app.use(express.json());
+
+const WORKSPACE_ROOT = path.resolve("e:/JarvisX Agent");
+
+// Safety Check: Prevent access outside workspace
+const isPathSafe = (targetPath: string) => {
+  const resolvedPath = path.resolve(WORKSPACE_ROOT, targetPath);
+  return resolvedPath.startsWith(WORKSPACE_ROOT);
+};
 
 const API_KEY = "local-dev-key-123"; // In production, this should be in .env
 

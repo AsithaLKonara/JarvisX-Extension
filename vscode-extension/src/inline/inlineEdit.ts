@@ -38,6 +38,21 @@ export async function inlineEdit() {
       modifiedUri,
       "AI Diff Preview"
     );
+
+    // Approval Gate
+    const action = await vscode.window.showInformationMessage(
+      "JarvisX has suggested changes. Would you like to apply them?",
+      "Apply",
+      "Reject"
+    );
+
+    if (action === "Apply") {
+      const edit = new vscode.WorkspaceEdit();
+      const newText = (await vscode.workspace.openTextDocument(modifiedUri)).getText();
+      edit.replace(originalUri, selection, newText);
+      await vscode.workspace.applyEdit(edit);
+      vscode.window.showInformationMessage("Changes applied.");
+    }
   } catch (error) {
     vscode.window.showErrorMessage("Failed to perform AI inline edit. Is the AI Server running?");
   }

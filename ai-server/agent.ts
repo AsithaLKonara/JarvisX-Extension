@@ -1,6 +1,5 @@
-/**
- * Autonomous Agent Loop
- */
+import fetch from "node-fetch";
+import { validateAgentResponse, AgentAction } from "./schema";
 
 async function model(prompt: string): Promise<string> {
     const response = await fetch("http://localhost:3333/chat", {
@@ -12,24 +11,69 @@ async function model(prompt: string): Promise<string> {
     return data.text;
 }
 
-async function runTool(action: string): Promise<{ success: boolean }> {
-    console.log(`Executing tool: ${action}`);
-    // Tool execution logic would go here (e.g. file writing, shell commands)
-    return { success: true };
+import { dispatchTool } from './tools';
+
+async function runTool(action: AgentAction): Promise<{ success: boolean, result?: any }> {
+    console.log(`Executing tool: ${action.type}`);
+
+    try {
+        const result = await dispatchTool(action);
+        return { success: true, result };
+    } catch (error: any) {
+        console.error(`Tool Execution Failed: ${error.message}`);
+        return { success: false, result: error.message };
+    }
+}
+
+function isPathSafe(targetPath: string) {
+    // This would ideally be shared with server.ts or moved to a utils file
+    return true; // Placeholder for logic added in server.ts
 }
 
 export async function startAgentLoop(goal: string) {
     let step = 1;
-    while (step < 10) { // Limit steps for safety
+    const history: any[] = [];
+
+    while (step < 10) {
         console.log(`--- Step ${step}: ${goal} ---`);
 
-        const plan = await model(`Current goal: ${goal}. Plan the next immediate step to achieve this.`);
-        console.log(`Plan: ${plan}`);
+        const context = history.map(h => `Step ${h.step}: ${h.action.type} -> ${h.success ? 'Success' : 'Failure'}${h.result ? `: ${h.result}` : ''}`).join('\n');
+        const prompt = `Goal: ${goal}\nHistory:\n${context}\n\nTask: Plan the next step. Return ONLY valid JSON.`;
 
-        const action = await model(`Execute the following plan: ${plan}. Return a tool command.`);
-        const result = await runTool(action);
+        const rawResponse = await model(prompt);
 
-        if (result.success && plan.toLowerCase().includes("finish")) {
+        let response;
+        try {
+            response = JSON.parse(rawResponse);
+        } catch (e) {
+            console.error("Failed to parse AI response as JSON.");
+            break;
+        }
+
+        const validatedResponse = validateAgentResponse(response);
+        if (!validatedResponse) {
+            console.error("AI response did not match the expected schema.");
+            break;
+        }
+
+        console.log(`Plan: ${validatedResponse.plan.join(" -> ")}`);
+
+        let stepSuccess = true;
+        for (const action of validatedResponse.actions) {
+            const result = await runTool(action);
+            history.push({
+                step,
+                action,
+                success: result.success,
+                result: result.result
+            });
+            if (!result.success) {
+                stepSuccess = false;
+                break;
+            }
+        }
+
+        if (validatedResponse.plan.some(p => p.toLowerCase().includes("finish"))) {
             console.log("Goal achieved.");
             break;
         }
