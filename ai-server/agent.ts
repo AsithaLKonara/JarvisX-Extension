@@ -1,5 +1,8 @@
 import fetch from "node-fetch";
-import { validateAgentResponse, AgentAction } from "./schema";
+import { validateAgentResponse, AgentAction, AgentResponse } from "./schema";
+import { isPathSafe, isFileAllowed, countTokens, MAX_CONTEXT_TOKENS } from "./utils";
+import { saveMemory, getMemories, clearShortTermMemory, detectProjectInfo } from "./memory";
+import { buildPrompt } from "./prompt";
 
 async function model(prompt: string): Promise<string> {
     const response = await fetch("http://localhost:3333/chat", {
@@ -25,20 +28,40 @@ async function runTool(action: AgentAction): Promise<{ success: boolean, result?
     }
 }
 
-function isPathSafe(targetPath: string) {
-    // This would ideally be shared with server.ts or moved to a utils file
-    return true; // Placeholder for logic added in server.ts
-}
+// function isPathSafe(targetPath: string) {
+//     // Removed redundant placeholder
+// }
 
 export async function startAgentLoop(goal: string) {
     let step = 1;
-    const history: any[] = [];
+    // Clear previous short-term session memory for a fresh start or handle as needed
+    // clearShortTermMemory(); 
+
+    // Auto-detect project info
+    await detectProjectInfo();
 
     while (step < 10) {
         console.log(`--- Step ${step}: ${goal} ---`);
 
-        const context = history.map(h => `Step ${h.step}: ${h.action.type} -> ${h.success ? 'Success' : 'Failure'}${h.result ? `: ${h.result}` : ''}`).join('\n');
-        const prompt = `Goal: ${goal}\nHistory:\n${context}\n\nTask: Plan the next step. Return ONLY valid JSON.`;
+        // Retrieve short-term and project memory for context
+        let shortMemories = getMemories('short_term', 10) as any[];
+        const projectMemories = getMemories('project', 1) as any[];
+
+        let memoryLines = [
+            ...projectMemories.map(m => `PROJECT INFO: ${m.content}`),
+            ...shortMemories.reverse().map(m => `HISTORY: ${m.content}`)
+        ];
+
+        let memoryContext = memoryLines.join('\n');
+
+        // Context Pruning: If token count is too high, remove oldest history
+        while (countTokens(memoryContext + goal) > MAX_CONTEXT_TOKENS * 0.8 && memoryLines.length > 2) {
+            memoryLines.splice(1, 1); // Remove the oldest history entry (keep project info at index 0)
+            memoryContext = memoryLines.join('\n');
+        }
+
+        const prompt = buildPrompt(goal, memoryContext);
+        console.log(`Current context size: ${countTokens(prompt)} tokens`);
 
         const rawResponse = await model(prompt);
 
@@ -60,13 +83,28 @@ export async function startAgentLoop(goal: string) {
 
         let stepSuccess = true;
         for (const action of validatedResponse.actions) {
+            // Path and File Safety Checks
+            if (action.path) {
+                if (!isPathSafe(action.path)) {
+                    console.error(`Blocked unsafe path access: ${action.path}`);
+                    saveMemory('short_term', `Step ${step}: ${action.type} -> ACCESS DENIED (Unsafe Path)`);
+                    stepSuccess = false;
+                    break;
+                }
+                if (action.type === 'edit_file' && !isFileAllowed(action.path)) {
+                    console.error(`Blocked forbidden file type: ${action.path}`);
+                    saveMemory('short_term', `Step ${step}: ${action.type} -> ACCESS DENIED (Forbidden Extension)`);
+                    stepSuccess = false;
+                    break;
+                }
+            }
+
             const result = await runTool(action);
-            history.push({
-                step,
-                action,
-                success: result.success,
-                result: result.result
-            });
+
+            // Persist step result to memory
+            const memoryContent = `Step ${step}: ${action.type} ${action.path || ''} -> ${result.success ? 'Success' : 'Failure'}${result.result ? `: ${JSON.stringify(result.result)}` : ''}`;
+            saveMemory('short_term', memoryContent);
+
             if (!result.success) {
                 stepSuccess = false;
                 break;
