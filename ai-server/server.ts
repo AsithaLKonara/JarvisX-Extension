@@ -2,17 +2,16 @@ import express from "express";
 import fetch from "node-fetch";
 import { validateAgentResponse } from "./schema";
 import path from "path";
+import { isPathSafe } from "./utils";
+import { approvalManager } from "./approvalManager";
+import { startAgentLoop } from "./agent"; // Explicitly import to ensure availability
 
 const app = express();
 app.use(express.json());
 
 const WORKSPACE_ROOT = path.resolve("e:/JarvisX Agent");
 
-// Safety Check: Prevent access outside workspace
-const isPathSafe = (targetPath: string) => {
-  const resolvedPath = path.resolve(WORKSPACE_ROOT, targetPath);
-  return resolvedPath.startsWith(WORKSPACE_ROOT);
-};
+// Redundant definition removed, now using utils.ts
 
 const API_KEY = "local-dev-key-123"; // In production, this should be in .env
 
@@ -37,6 +36,16 @@ app.get("/health", async (req, res) => {
   } catch (e) {
     res.status(503).json({ status: "degraded", ai_provider: "error" });
   }
+});
+
+app.get("/approvals/pending", authMiddleware, (req, res) => {
+  res.json(approvalManager.getPending());
+});
+
+app.post("/approvals/respond", authMiddleware, (req, res) => {
+  const { id, decision } = req.body;
+  const success = approvalManager.respond(id, decision);
+  res.json({ success });
 });
 
 app.post("/chat", authMiddleware, async (req, res) => {
